@@ -30,7 +30,7 @@ void IntersectionTestIntegrator::render(ref<Camera> camera, ref<Scene> scene) {
   std::atomic<int> cnt = 0;
 
   const Vec2i &resolution = camera->getFilm()->getResolution();
-// #pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(dynamic)
   for (int dx = 0; dx < resolution.x; dx++) {
     ++cnt;
     if (cnt % (resolution.x / 10) == 0)
@@ -39,14 +39,6 @@ void IntersectionTestIntegrator::render(ref<Camera> camera, ref<Scene> scene) {
     for (int dy = 0; dy < resolution.y; dy++) {
       sampler.setPixelIndex2D(Vec2i(dx, dy));
       for (int sample = 0; sample < spp; sample++) {
-        // BEGIN: DEBUG
-
-        if (dx != 20 || dy != 10) {
-            continue;
-        }
-
-        // END: DEBUG
-
         // TODO(HW3): generate #spp rays for each pixel and use Monte Carlo
         // integration to compute radiance.
         //
@@ -80,69 +72,68 @@ void IntersectionTestIntegrator::render(ref<Camera> camera, ref<Scene> scene) {
 
 Vec3f IntersectionTestIntegrator::Li(
     ref<Scene> scene, DifferentialRay &ray, Sampler &sampler) const {
-  Vec3f color(0.0);
+    Vec3f color(0.0);
 
-  // Cast a ray until we hit a non-specular surface or miss
-  // Record whether we have found a diffuse surface
-  bool diffuse_found = false;
-  SurfaceInteraction interaction;
+    // Cast a ray until we hit a non-specular surface or miss
+    // Record whether we have found a diffuse surface
+    bool diffuse_found = false;
+    SurfaceInteraction interaction;
 
-  for (int i = 0; i < max_depth; ++i) {
-    interaction      = SurfaceInteraction();
-    bool intersected = scene->intersect(ray, interaction);
-    // Info_("Iter %d: Intersection found at p = %s", i, interaction.p);
-    // if (interaction.bsdf == nullptr) {
-    //     Info_("  -> CRITICAL ERROR: BSDF pointer is NULL!");
-    // } //else {
-    //     Info_("  -> BSDF pointer is valid.");
-    //     if (dynamic_cast<const IdealDiffusion *>(interaction.bsdf)) {
-    //         Info_("  -> Material is IdealDiffusion.");
-    //     } else if (dynamic_cast<const PerfectRefraction *>(interaction.bsdf)) {
-    //         Info_("  -> Material is PerfectRefraction.");
-    //     } else {
-    //         Info_("  -> Material is of an UNKNOWN type!");
-    //     }
-    // }
-    // Perform RTTI to determine the type of the surface
-    bool is_ideal_diffuse =
-        dynamic_cast<const IdealDiffusion *>(interaction.bsdf) != nullptr;
-    bool is_perfect_refraction =
-        dynamic_cast<const PerfectRefraction *>(interaction.bsdf) != nullptr;
+    for (int i = 0; i < max_depth; ++i) {
+        interaction = SurfaceInteraction();
+        bool intersected = scene->intersect(ray, interaction);
+        // Info_("Iter %d: Intersection found at p = %s", i, interaction.p);
+        // if (interaction.bsdf == nullptr) {
+        //     Info_("  -> CRITICAL ERROR: BSDF pointer is NULL!");
+        // } //else {
+        //     Info_("  -> BSDF pointer is valid.");
+        //     if (dynamic_cast<const IdealDiffusion *>(interaction.bsdf)) {
+        //         Info_("  -> Material is IdealDiffusion.");
+        //     } else if (dynamic_cast<const PerfectRefraction
+        //     *>(interaction.bsdf)) {
+        //         Info_("  -> Material is PerfectRefraction.");
+        //     } else {
+        //         Info_("  -> Material is of an UNKNOWN type!");
+        //     }
+        // }
+        // Perform RTTI to determine the type of the surface
+        bool is_ideal_diffuse =
+            dynamic_cast<const IdealDiffusion*>(interaction.bsdf) != nullptr;
+        bool is_perfect_refraction =
+            dynamic_cast<const PerfectRefraction*>(interaction.bsdf) != nullptr;
 
-    // Set the outgoing direction
-    interaction.wo = -ray.direction;
+        // Set the outgoing direction
+        interaction.wo = -ray.direction;
 
-    if (!intersected) {
-      break;
+        if (!intersected) {
+            break;
+        }
+
+        if (is_perfect_refraction) {
+            // We should follow the specular direction
+            // TODO(HW3): call the interaction.bsdf->sample to get the new
+            // direction and update the ray accordingly.
+            //
+            // Useful Functions:
+            // @see BSDF::sample
+            // @see SurfaceInteraction::spawnRay
+            //
+            // You should update ray = ... with the spawned ray
+            Float pdf;
+            interaction.bsdf->sample(interaction, sampler, &pdf);
+            ray = interaction.spawnRay(interaction.wi);
+            continue;
+        }
+
+        if (is_ideal_diffuse) {
+            // We only consider diffuse surfaces for direct lighting
+            diffuse_found = true;
+            break;
+        }
+
+        // We simply omit any other types of surfaces
+        break;
     }
-
-    return Vec3f(1.0F);
-
-    if (is_perfect_refraction) {
-      // We should follow the specular direction
-      // TODO(HW3): call the interaction.bsdf->sample to get the new direction
-      // and update the ray accordingly.
-      //
-      // Useful Functions:
-      // @see BSDF::sample
-      // @see SurfaceInteraction::spawnRay
-      //
-      // You should update ray = ... with the spawned ray
-      Float pdf;
-      interaction.bsdf->sample(interaction, sampler, &pdf);
-      ray = interaction.spawnRay(interaction.wi);
-      continue;
-    }
-
-    if (is_ideal_diffuse) {
-      // We only consider diffuse surfaces for direct lighting
-      diffuse_found = true;
-      break;
-    }
-
-    // We simply omit any other types of surfaces
-    break;
-  }
 
   if (!diffuse_found) {
     return color;

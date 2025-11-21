@@ -237,9 +237,11 @@ bool BVHTree<_>::intersect(
   if (!node.aabb.intersect(ray, &t_in, &t_out)) return result;
 
   if (node.is_leaf) {
+    // Leaf node, test all primitives
     for (IndexType span_index = node.span_left; span_index < node.span_right;
-        ++span_index)
+        ++span_index){
       result |= callback(ray, nodes[span_index].getData());
+    }
     return result;
   } else {
     // Recurse

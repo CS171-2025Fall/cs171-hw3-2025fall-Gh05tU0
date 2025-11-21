@@ -55,7 +55,7 @@ bool AABB::intersect(const Ray &ray, Float *t_in, Float *t_out) const {
 
   Float t_exit = ReduceMin(t2);
 
-  if (t_enter < t_exit && t_exit > 0) {
+  if (t_enter < t_exit + EPS && t_exit > 0) {
     if (t_in) *t_in = t_enter;
     if (t_out) *t_out = t_exit;
     return true;

@@ -25,6 +25,44 @@ RDR_NAMESPACE_BEGIN
  *
  * ===================================================================== */
 
+Vec3f IntersectionTestIntegrator::directLighting(
+    ref<Scene> scene, SurfaceInteraction &interaction, Sampler &sampler) const {
+
+    const Vec3f light_origin = {-0.25f, 1.98f, -0.25f};
+    const Vec3f light_edge1 = {0.5f, 0.0f, 0.0f};
+    const Vec3f light_edge2 = {0.0f, 0.0f, 0.5f};
+    const Vec3f light_radiance = {17.0f, 12.0f, 4.0f};
+    
+    const Vec3f light_normal = Normalize(Cross(light_edge1, light_edge2));
+    const Float light_area = Norm(Cross(light_edge1, light_edge2));
+    const Float light_pdf = 1.0f / light_area;
+
+    const Vec2f &rand_sample = sampler.get2D();
+    const Vec3f point_on_light = light_origin + rand_sample.x * light_edge1 + rand_sample.y * light_edge2;
+
+    const Vec3f to_light_dir = Normalize(point_on_light - interaction.p);
+    const Float dist_sq = Dot(point_on_light - interaction.p, point_on_light - interaction.p);
+    const Float dist = std::sqrt(dist_sq);
+
+    auto shadow_ray = DifferentialRay(interaction.p, to_light_dir, RAY_DEFAULT_MIN, dist - RAY_DEFAULT_MIN);
+    SurfaceInteraction shadow_interaction;
+    if (scene->intersect(shadow_ray, shadow_interaction)) {
+        return Vec3f(0.0f);
+    }
+
+    const Vec3f Le = light_radiance;
+
+    interaction.wi = to_light_dir;
+    const Vec3f fr = interaction.bsdf->evaluate(interaction);
+    const Float cos_theta_at_surface = std::abs(Dot(interaction.normal, to_light_dir));
+    const Float cos_theta_at_light = std::abs(Dot(light_normal, -to_light_dir));
+    const Float G = cos_theta_at_surface * cos_theta_at_light / dist_sq;
+    
+    const Float pdf = light_pdf;
+
+    return Le * fr * G / pdf;
+}
+
 void IntersectionTestIntegrator::render(ref<Camera> camera, ref<Scene> scene) {
   // Statistics
   std::atomic<int> cnt = 0;
@@ -139,13 +177,16 @@ Vec3f IntersectionTestIntegrator::Li(
     return color;
   }
 
-  color = directLighting(scene, interaction);
+  // color = directLighting(scene, interaction);
+  
+  color = directLighting(scene, interaction, sampler);
   return color;
 }
 
 Vec3f IntersectionTestIntegrator::directLighting(
     ref<Scene> scene, SurfaceInteraction &interaction) const {
-  Vec3f color(0, 0, 0);
+  Vec3f accumulated_color(0, 0, 0);
+
   Float dist_to_light = Norm(point_light_position - interaction.p);
   Vec3f light_dir     = Normalize(point_light_position - interaction.p);
   auto test_ray       = DifferentialRay(interaction.p, light_dir, RAY_DEFAULT_MIN, dist_to_light);
@@ -176,6 +217,7 @@ Vec3f IntersectionTestIntegrator::directLighting(
   bool is_ideal_diffuse = dynamic_cast<const IdealDiffusion *>(bsdf) != nullptr;
 
   if (bsdf != nullptr && is_ideal_diffuse) {
+  // if (false) {
     // TODO(HW3): Compute the contribution
     //
     // You can use bsdf->evaluate(interaction) * cos_theta to approximate the
@@ -192,10 +234,28 @@ Vec3f IntersectionTestIntegrator::directLighting(
     // color = ...
     // color = bsdf->evaluate(interaction) * cos_theta;
     auto albedo = bsdf->evaluate(interaction) * cos_theta;
-    color = albedo * point_light_flux  / (4 * PI * dist_to_light * dist_to_light);
+    accumulated_color += albedo * point_light_flux  / (4 * PI * dist_to_light * dist_to_light);
   }
 
-  return color;
+  const Vec3f point_light_position_2 = {0.0f, 0.0f, 5.0f};
+
+  const Float dist_to_light_2 = Norm(point_light_position_2 - interaction.p);
+  const Vec3f light_dir_2     = Normalize(point_light_position_2 - interaction.p);
+  
+  auto shadow_ray_2 = DifferentialRay(interaction.p, light_dir_2, RAY_DEFAULT_MIN, dist_to_light_2 - RAY_DEFAULT_MIN);
+
+  SurfaceInteraction shadow_interaction_2;
+
+  if (!scene->intersect(shadow_ray_2, shadow_interaction_2)) {
+      const BSDF *bsdf = interaction.bsdf;
+      if (dynamic_cast<const IdealDiffusion *>(bsdf) != nullptr) {
+          const Float cos_theta_2 = std::max(Dot(light_dir_2, interaction.normal), 0.0f);
+          const auto albedo = bsdf->evaluate(interaction) * cos_theta_2;
+          accumulated_color += albedo * point_light_flux / (4 * PI * dist_to_light_2 * dist_to_light_2);
+      }
+  }
+
+  return accumulated_color;
 }
 
 /* ===================================================================== *
